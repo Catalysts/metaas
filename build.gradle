@@ -1,0 +1,114 @@
+import org.gradle.api.XmlProvider
+import org.gradle.api.artifacts.maven.MavenDeployment
+
+apply plugin: 'java'
+apply plugin: 'groovy'
+apply plugin: 'maven'
+apply plugin: 'signing'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+
+group = 'cc.catalysts'
+version = '0.9'
+
+repositories {
+	mavenCentral()
+}
+
+ext.antlrSource = "src/main/antlr"
+ext.antlrOutput = "$buildDir/generated-src/antlr"
+
+configurations {
+	antlr3
+}
+
+dependencies {
+	compile group: 'org.antlr', name: 'antlr-runtime', version: '3.0.1', transitive: false
+	
+	antlr3 group: 'org.antlr', name: 'antlr', version: '3.0.1'
+	
+	testCompile group: 'junit', name: 'junit', version: '3.8.1'
+	testCompile group: 'commons-io', name: 'commons-io', version: '1.3.2'
+}
+
+task generateGrammarSource {
+	description = "Generates Java sources from Antlr3 grammars."
+	inputs.dir file(antlrSource)
+	outputs.dir file(antlrOutput)
+} << {
+	mkdir(antlrOutput)
+	def grammars = fileTree(antlrSource).include("**/*.g").exclude("**/Regex.g")
+	
+	ant.java(classname: 'org.antlr.Tool', fork: true, classpath: "${configurations.antlr3.asPath}") {
+		arg(line: "-o ${antlrOutput}/org/apache/tapestry5/internal/antlr")
+		arg(line: grammars.files.join(" "))
+	}
+}
+
+sourceSets.main.java.srcDir antlrOutput
+
+compileJava.dependsOn generateGrammarSource
+
+task sourcesJar(type: Jar) {
+	from sourceSets.main.allSource
+	classifier = 'sources'
+}
+
+task groovydocJar(type: Jar, dependsOn: groovydoc) {
+	classifier = 'javadoc'
+	from 'build/docs/groovydoc'
+}
+
+artifacts {
+	archives jar
+	archives sourcesJar
+	archives groovydocJar
+}
+
+signing {
+	sign configurations.archives
+}
+
+task wrapper(type: Wrapper) {
+	gradleVersion = '1.0-milestone-9'
+}
+
+uploadArchives {
+	repositories {
+		mavenDeployer {
+			beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+			
+			repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
+				authentication(userName: sonatypeUsername, password: sonatypePassword)
+			}
+			
+			pom.project {
+				name 'metaas'
+				packaging 'jar'
+				description 'metaas'
+				url 'https://github.com/Catalysts/metaas'
+				
+				scm {
+					url 'scm:git@github.com:Catalysts/metaas.git'
+					connection 'scm:git@github.com:Catalysts/metaas.git'
+					developerConnection 'scm:git@github.com:Catalysts/metaas.git'
+				}
+				
+				licenses {
+					license {
+						name 'The Apache Software License, Version 2.0'
+						url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+						distribution 'repo'
+					}
+				}
+				
+				developers {
+					developer {
+						id 'haraldradi'
+						name 'Harald Radi'
+					}
+				}
+			}
+		}
+	}
+}
